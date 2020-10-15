@@ -1,54 +1,53 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"github.com/chromedp/chromedp"
+	"github.com/gocolly/colly/v2"
 	"log"
+	"strings"
 	"time"
 )
 
 func main() {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.DisableGPU,
-		// Set the headless flag to false to display the browser window
-		chromedp.Flag("headless", false),
-	)
+	c := colly.NewCollector(colly.MaxBodySize(100 * 1024 * 1024))
 
-	ctx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	defer cancel()
+	c.OnHTML("#enc-abstract p", func(e *colly.HTMLElement) {
+		fmt.Printf("Abstract found: %q\n", strings.TrimSpace(e.Text))
+	})
 
-	ctx, cancel = chromedp.NewContext(ctx)
-	defer cancel()
+	c.OnHTML("#enc-abstract+ p", func(e *colly.HTMLElement) {
+		fmt.Printf("Abstract found: %q\n", strings.TrimSpace(e.Text))
+	})
 
-	abstract := new(string)
-	keywords := new(string)
-	assemblyUrl := new(string)
-	okAssemblyUrl := new(bool)
+	c.OnHTML("#related-links li:nth-child(1) a", func(e *colly.HTMLElement) {
+		link := e.Attr("href")
+		// Print link
+		fmt.Printf("Assembly link found: %q -> %s\n", strings.TrimSpace(e.Text), link)
+	})
 
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://pubmed.ncbi.nlm.nih.gov/29708484/"),
-		//chromedp.Sleep(5*time.Second),
-		chromedp.WaitReady("#enc-abstract"),
-		chromedp.Text("#enc-abstract p", abstract),
-		chromedp.Text("#enc-abstract+ p", keywords),
-		chromedp.AttributeValue("#related-links li:nth-child(1) a", "href", assemblyUrl, okAssemblyUrl),
-		); err != nil {
+	// Before making a request print "Visiting ..."
+	c.OnRequest(func(r *colly.Request) {
+		fmt.Println("Visiting", r.URL.String())
+	})
+
+	// Start scraping
+	if err := c.Visit("https://pubmed.ncbi.nlm.nih.gov/29708484/"); err != nil {
 		log.Fatal(err)
 	}
 
-	if !*okAssemblyUrl {
-		log.Fatal("url do assembly nao encontrada")
-	}
+	// Exemplo para fazer download. Tá descomprimindo automaticamente, acho que seria interessante não descomprimir caso
+	// o script do python aceite em .gz
+	c.SetRequestTimeout(60*time.Second)
+	c.OnResponse(func(r *colly.Response) {
+		if err := r.Save(fmt.Sprintf("%s.%s", "arquivo", "gbff")); err != nil {
+			log.Println("Save error:", err)
+		}
+	})
 
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(*assemblyUrl),
-		chromedp.Sleep(5*time.Second),
-	); err != nil {
+	start := time.Now()
+	if err := c.Visit("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/003/177/105/GCA_003177105.1_ASM317710v1/GCA_003177105.1_ASM317710v1_genomic.gbff.gz"); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println(*abstract)
-	fmt.Println(*keywords)
-	fmt.Println(*assemblyUrl)
+	elapsed := time.Since(start)
+	log.Printf("Save file took %s", elapsed)
 }
