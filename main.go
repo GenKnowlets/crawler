@@ -1,7 +1,9 @@
 package main
 
 import (
+	"biocrawler/model"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gocolly/colly/v2"
 	"io/ioutil"
@@ -10,47 +12,64 @@ import (
 	"time"
 )
 
-type Report struct {
-	OrganismName string `json:"organismName"`
-	InfraspecificName string `json:"infraspecificName"`
-	BioSampleUrl string `json:"bioSampleUrl"`
-	Submitter string `json:"submitter"`
-	Date string `json:"date"`
-	FTPUrl string `json:"ftpUrl"`
-	GBFFUrl string `json:"gbffUrl"`
-}
-
-type Link struct {
-	Url string `json:"url"`
-	Report Report `json:"report"`
-}
-
-type Assembly struct {
-	Url string `json:"url"`
-	Links []Link `json:"links"`
-}
-
-type Data struct {
-	Abstract string `json:"abstract"`
-	Keywords []string `json:"keywords"`
-	Assembly Assembly `json:"assembly"`
-}
-
 func main() {
-	var data Data
+	data := new(model.Data)
 	c := colly.NewCollector(colly.MaxBodySize(100 * 1024 * 1024))
+	c.AllowURLRevisit = true
 
+	if err := crawlPubmed(c, data, "https://pubmed.ncbi.nlm.nih.gov/29708484/"); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := crawlAssemblySearch(c, data); err != nil {
+		log.Fatal(err)
+	}
+
+	for _, link := range data.Assembly.Links {
+		if err := crawlAssembly(c, link.Url, link); err != nil {
+			log.Fatal(err)
+		}
+
+		if link.Report.BioSample.Url != "" {
+			if err := crawlBioSample(c, link.Report.BioSample.Url, link); err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		if link.Report.FTPUrl != "" {
+			if err := crawlFTPAndDownload(c, link); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
+	prettyPrintJSON(data)
+
+	file, _ := json.MarshalIndent(data, "", "  ")
+
+	_ = ioutil.WriteFile("data.json", file, 0644)
+}
+
+func crawlPubmed(c *colly.Collector, data *model.Data, url string) error {
+	fmt.Println("Crawl Pudmed")
+	// Get abstract
 	c.OnHTML("#enc-abstract p", func(e *colly.HTMLElement) {
 		data.Abstract = strings.TrimSpace(e.Text)
 	})
 
+	// Get keywords
 	c.OnHTML("#enc-abstract+ p", func(e *colly.HTMLElement) {
 		data.Keywords = strings.Split(strings.TrimSpace(strings.Replace(e.Text, "Keywords:", "", -1)), "; ")
 	})
 
+	// Get DOI
+	c.OnHTML(".doi .id-link", func(e *colly.HTMLElement) {
+		data.DOI = e.Attr("href")
+	})
+
+	// Get Assembly URL
 	c.OnHTML("#related-links li", func(e *colly.HTMLElement) {
-		// Print link
-		e.ForEachWithBreak("a", func(index int, f *colly.HTMLElement) bool{
+		e.ForEachWithBreak("a", func(index int, f *colly.HTMLElement) bool {
 			if strings.TrimSpace(e.Text) == "Assembly" {
 				data.Assembly.Url = f.Attr("href")
 				return false
@@ -59,110 +78,173 @@ func main() {
 		})
 	})
 
-	// Start scraping
-	if err := c.Visit("https://pubmed.ncbi.nlm.nih.gov/29708484/"); err != nil {
-		log.Fatal(err)
+	if err := c.Visit(url); err != nil {
+		return err
 	}
 
 	if data.Assembly.Url == "" {
 		log.Println("No assembly url")
-		return
+		return errors.New("no assembly url found")
 	}
 
+	return nil
+}
+
+func crawlAssemblySearch(c *colly.Collector, data *model.Data) error {
+	fmt.Println("Crawl Assembly search")
 	c.OnHTML(".rslt .title", func(e *colly.HTMLElement) {
-		// Print link
 		e.ForEach("a", func(index int, f *colly.HTMLElement) {
-			link := Link{
+			link := &model.Link{
 				Url:    e.Request.AbsoluteURL(f.Attr("href")),
-				Report: Report{},
+				Report: &model.Report{
+					BioSample: &model.BioSample{},
+				},
 			}
 			data.Assembly.Links = append(data.Assembly.Links, link)
 		})
 	})
 
 	if err := c.Visit(data.Assembly.Url); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	for i, link := range data.Assembly.Links {
-		c.OnHTML("dl", func(e *colly.HTMLElement) {
-			var infos []string
-			e.ForEach("dt", func(_ int, f *colly.HTMLElement) {
-				infos = append(infos, f.Text)
-			})
-			e.ForEach("dd", func(index int, f *colly.HTMLElement) {
-				switch infos[index] {
-				case "Organism name: ":
-					data.Assembly.Links[i].Report.OrganismName = f.Text
-				case "Infraspecific name: ":
-					data.Assembly.Links[i].Report.InfraspecificName = f.Text
-				case "BioSample: ":
-					url, _ := f.DOM.Find("a").Attr("href")
-					data.Assembly.Links[i].Report.BioSampleUrl = e.Request.AbsoluteURL(url)
-				case "Submitter: ":
-					data.Assembly.Links[i].Report.Submitter = f.Text
-				case "Date: ":
-					data.Assembly.Links[i].Report.Date = f.Text
-				}
-			})
+	return nil
+}
+
+func crawlAssembly(c *colly.Collector, url string, assembly *model.Link) error {
+	fmt.Println("Crawl Assembly")
+	c.OnHTML("dl", func(e *colly.HTMLElement) {
+		var infos []string
+		e.ForEach("dt", func(_ int, f *colly.HTMLElement) {
+			infos = append(infos, f.Text)
 		})
-
-		c.OnHTML(".portlet_content ul", func(g *colly.HTMLElement) {
-			g.ForEachWithBreak("a",  func(_ int, f *colly.HTMLElement) bool{
-				if strings.Contains(f.Text, "FTP directory") {
-					data.Assembly.Links[i].Report.FTPUrl = strings.Replace(f.Attr("href"), "ftp://", "http://", 1)
-					return false
-				}
-				return true
-			})
-		})
-
-
-		if err := c.Visit(link.Url); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	for i, link := range data.Assembly.Links {
-		if link.Report.FTPUrl == "" {
-			continue
-		}
-
-		c.OnHTML("pre", func(e *colly.HTMLElement) {
-			e.ForEachWithBreak("a",  func(index int, f *colly.HTMLElement) bool{
-				if strings.Contains(f.Text, "genomic.gbff.gz") {
-					data.Assembly.Links[i].Report.GBFFUrl = e.Request.AbsoluteURL(f.Attr("href"))
-					return false
-				}
-				return true
-			})
-		})
-		if err := c.Visit(link.Report.FTPUrl); err != nil {
-			log.Fatal(err)
-		}
-
-		c.SetRequestTimeout(600*time.Second)
-		c.OnResponse(func(r *colly.Response) {
-			if err := r.Save(fmt.Sprintf("%v.%s", i, "gbff")); err != nil {
-				log.Println("Save error:", err)
+		e.ForEach("dd", func(index int, f *colly.HTMLElement) {
+			switch infos[index] {
+			case "Organism name: ":
+				assembly.Report.OrganismName = f.Text
+			case "Infraspecific name: ":
+				assembly.Report.InfraspecificName = f.Text
+			case "BioSample: ":
+				url, _ := f.DOM.Find("a").Attr("href")
+				assembly.Report.BioSample.Url = e.Request.AbsoluteURL(url)
+			case "Submitter: ":
+				assembly.Report.Submitter = f.Text
+			case "Date: ":
+				assembly.Report.Date = f.Text
 			}
 		})
+	})
 
-		start := time.Now()
-		if err := c.Visit(data.Assembly.Links[i].Report.GBFFUrl); err != nil {
-			log.Fatal(err)
-		}
-		elapsed := time.Since(start)
-		log.Printf("Save file took %s", elapsed)
+	c.OnHTML(".portlet_content ul", func(g *colly.HTMLElement) {
+		g.ForEachWithBreak("a", func(_ int, f *colly.HTMLElement) bool {
+			if strings.Contains(f.Text, "FTP directory") {
+				assembly.Report.FTPUrl = strings.Replace(f.Attr("href"), "ftp://", "http://", 1)
+				return false
+			}
+			return true
+		})
+	})
+
+	c.OnHTML(".portlet_content ul", func(g *colly.HTMLElement) {
+		g.ForEachWithBreak("a", func(_ int, f *colly.HTMLElement) bool {
+			if strings.Contains(f.Text, "FTP directory") {
+				assembly.Report.FTPUrl = strings.Replace(f.Attr("href"), "ftp://", "http://", 1)
+				return false
+			}
+			return true
+		})
+	})
+
+	if err := c.Visit(url); err != nil {
+		return err
 	}
 
-	b, err := json.MarshalIndent(data,""," ")
+	return nil
+}
+
+func crawlBioSample(c *colly.Collector, url string, assembly *model.Link) error {
+	fmt.Println("Crawl BioSample")
+
+	c.OnHTML("tbody", func(table *colly.HTMLElement) {
+		table.ForEach("tr", func(index int, row *colly.HTMLElement) {
+			switch row.DOM.Find("th").Text() {
+			case "strain":
+				assembly.Report.BioSample.Strain = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "collection date":
+				assembly.Report.BioSample.CollectionDate = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "broad-scale environmental context":
+				assembly.Report.BioSample.BroadScaleEnvironmentalContext = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "local-scale environmental context":
+				assembly.Report.BioSample.LocalScaleEnvironmentalContext = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "environmental medium":
+				assembly.Report.BioSample.EnvironmentalMedium = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "geographic location":
+				assembly.Report.BioSample.GeographicLocation = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "latitude and longitude":
+				assembly.Report.BioSample.LatLong = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "host":
+				assembly.Report.BioSample.Host = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "isolation and growth condition":
+				assembly.Report.BioSample.IsolationAndGrowthCondition = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "number of replicons":
+				assembly.Report.BioSample.NumberOfReplicons = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "ploidy":
+				assembly.Report.BioSample.Ploidy = strings.TrimSpace(row.DOM.Find("td").Text())
+			case "propagation":
+				assembly.Report.BioSample.Propagation = strings.TrimSpace(row.DOM.Find("td").Text())
+			}
+		})
+	})
+
+	if err := c.Visit(url); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func crawlFTPAndDownload(c *colly.Collector, assembly *model.Link) error {
+	fmt.Println("Crawl FTP")
+	c.OnHTML("pre", func(e *colly.HTMLElement) {
+		e.ForEachWithBreak("a", func(index int, f *colly.HTMLElement) bool {
+			if strings.Contains(f.Text, "genomic.gbff.gz") {
+				assembly.Report.GBFFUrl = e.Request.AbsoluteURL(f.Attr("href"))
+				return false
+			}
+			return true
+		})
+	})
+	if err := c.Visit(assembly.Report.FTPUrl); err != nil {
+		return err
+	}
+
+	if assembly.Report.GBFFUrl != "" {
+		saveGBFF(c, strings.Replace(strings.Split(assembly.Report.GBFFUrl, "/")[len(strings.Split(assembly.Report.GBFFUrl, "/"))-1], ".gbff.gz", "", 1), assembly.Report.GBFFUrl)
+	}
+
+	return nil
+}
+
+func saveGBFF (c *colly.Collector, name, url string) {
+	c.SetRequestTimeout(600 * time.Second)
+	c.OnResponse(func(r *colly.Response) {
+		if err := r.Save(fmt.Sprintf("%v.%s", name, "gbff")); err != nil {
+			log.Println("Save error:", err)
+		}
+	})
+
+	start := time.Now()
+	if err := c.Visit(url); err != nil {
+		log.Fatal(err)
+	}
+	elapsed := time.Since(start)
+	log.Printf("Save file took %s", elapsed)
+}
+
+func prettyPrintJSON(data *model.Data) {
+	b, err := json.MarshalIndent(data, "", " ")
 	if err == nil {
 		s := string(b)
 		fmt.Println(s)
 	}
-
-	file, _ := json.MarshalIndent(data, "", "  ")
-
-	_ = ioutil.WriteFile("data.json", file, 0644)
 }
