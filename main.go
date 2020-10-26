@@ -41,8 +41,8 @@ func main() {
 				Destination: &quiet,
 			},
 			&cli.BoolFlag{
-				Name:        "output",
-				Aliases:     []string{"o"},
+				Name:        "print",
+				Aliases:     []string{"p"},
 				Usage:       "Display json output",
 				Destination: &output,
 			},
