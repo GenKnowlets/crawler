@@ -6,18 +6,46 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gocolly/colly/v2"
+	"github.com/urfave/cli/v2"
 	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 	"time"
 )
 
 func main() {
+	var url string
+
+	app := &cli.App{
+		Name:  "biocrawler",
+		Usage: "Crawler pubmed",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "url",
+				Value:       "https://pubmed.ncbi.nlm.nih.gov/29708484/",
+				Usage:       "url from pubsub",
+				Destination: &url,
+			},
+		},
+		Action: func(c *cli.Context) error {
+			crawlMain(url)
+			return nil
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func crawlMain(url string) {
 	data := new(model.Data)
 	c := colly.NewCollector(colly.MaxBodySize(100 * 1024 * 1024))
 	c.AllowURLRevisit = true
 
-	if err := crawlPubmed(c, data, "https://pubmed.ncbi.nlm.nih.gov/29708484/"); err != nil {
+	if err := crawlPubmed(c, data, url); err != nil {
 		log.Fatal(err)
 	}
 
@@ -95,7 +123,7 @@ func crawlAssemblySearch(c *colly.Collector, data *model.Data) error {
 	c.OnHTML(".rslt .title", func(e *colly.HTMLElement) {
 		e.ForEach("a", func(index int, f *colly.HTMLElement) {
 			link := &model.Link{
-				Url:    e.Request.AbsoluteURL(f.Attr("href")),
+				Url: e.Request.AbsoluteURL(f.Attr("href")),
 				Report: &model.Report{
 					BioSample: &model.BioSample{},
 				},
@@ -225,7 +253,7 @@ func crawlFTPAndDownload(c *colly.Collector, assembly *model.Link) error {
 	return nil
 }
 
-func saveGBFF (c *colly.Collector, name, url string) {
+func saveGBFF(c *colly.Collector, name, url string) {
 	c.SetRequestTimeout(600 * time.Second)
 	c.OnResponse(func(r *colly.Response) {
 		if err := r.Save(fmt.Sprintf("%v.%s", name, "gbff")); err != nil {
