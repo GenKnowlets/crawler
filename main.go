@@ -99,7 +99,9 @@ func crawlMain(url string, output bool) {
 
 	file, _ := json.MarshalIndent(data, "", "  ")
 
-	_ = ioutil.WriteFile("data.json", file, 0644)
+	if err := ioutil.WriteFile("data.json", file, 0644); err != nil {
+		log.Error(err)
+	}
 }
 
 func crawlPubmed(c *colly.Collector, data *model.Data, url string) error {
