@@ -6,16 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gocolly/colly/v2"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 	"time"
 )
 
+func init() {
+	log.SetLevel(log.InfoLevel)
+}
+
 func main() {
 	var url string
+	var quiet bool
+	var output bool
 
 	app := &cli.App{
 		Name:  "biocrawler",
@@ -23,13 +29,29 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:        "url",
+				Aliases:     []string{"u"},
 				Value:       "https://pubmed.ncbi.nlm.nih.gov/29708484/",
 				Usage:       "url from pubsub",
 				Destination: &url,
 			},
+			&cli.BoolFlag{
+				Name:        "quite",
+				Aliases:     []string{"q"},
+				Usage:       "Suppress log",
+				Destination: &quiet,
+			},
+			&cli.BoolFlag{
+				Name:        "output",
+				Aliases:     []string{"o"},
+				Usage:       "Display json output",
+				Destination: &output,
+			},
 		},
 		Action: func(c *cli.Context) error {
-			crawlMain(url)
+			if quiet {
+				log.SetLevel(log.ErrorLevel)
+			}
+			crawlMain(url, output)
 			return nil
 		},
 	}
@@ -40,7 +62,7 @@ func main() {
 	}
 }
 
-func crawlMain(url string) {
+func crawlMain(url string, output bool) {
 	data := new(model.Data)
 	c := colly.NewCollector(colly.MaxBodySize(100 * 1024 * 1024))
 	c.AllowURLRevisit = true
@@ -71,7 +93,9 @@ func crawlMain(url string) {
 		}
 	}
 
-	prettyPrintJSON(data)
+	if output {
+		prettyPrintJSON(data)
+	}
 
 	file, _ := json.MarshalIndent(data, "", "  ")
 
@@ -79,7 +103,7 @@ func crawlMain(url string) {
 }
 
 func crawlPubmed(c *colly.Collector, data *model.Data, url string) error {
-	fmt.Println("Crawl Pudmed")
+	log.Infof("Crawl Pudmed %s", url)
 	// Get abstract
 	c.OnHTML("#enc-abstract p", func(e *colly.HTMLElement) {
 		data.Abstract = strings.TrimSpace(e.Text)
@@ -119,7 +143,7 @@ func crawlPubmed(c *colly.Collector, data *model.Data, url string) error {
 }
 
 func crawlAssemblySearch(c *colly.Collector, data *model.Data) error {
-	fmt.Println("Crawl Assembly search")
+	log.Infof("Crawl Assembly search")
 	c.OnHTML(".rslt .title", func(e *colly.HTMLElement) {
 		e.ForEach("a", func(index int, f *colly.HTMLElement) {
 			link := &model.Link{
@@ -140,7 +164,7 @@ func crawlAssemblySearch(c *colly.Collector, data *model.Data) error {
 }
 
 func crawlAssembly(c *colly.Collector, url string, assembly *model.Link) error {
-	fmt.Println("Crawl Assembly")
+	log.Infof("Crawl Assembly %s", url)
 	c.OnHTML("dl", func(e *colly.HTMLElement) {
 		var infos []string
 		e.ForEach("dt", func(_ int, f *colly.HTMLElement) {
@@ -191,7 +215,7 @@ func crawlAssembly(c *colly.Collector, url string, assembly *model.Link) error {
 }
 
 func crawlBioSample(c *colly.Collector, url string, assembly *model.Link) error {
-	fmt.Println("Crawl BioSample")
+	log.Infof("Crawl BioSample %s", url)
 
 	c.OnHTML("tbody", func(table *colly.HTMLElement) {
 		table.ForEach("tr", func(index int, row *colly.HTMLElement) {
@@ -232,7 +256,7 @@ func crawlBioSample(c *colly.Collector, url string, assembly *model.Link) error 
 }
 
 func crawlFTPAndDownload(c *colly.Collector, assembly *model.Link) error {
-	fmt.Println("Crawl FTP")
+	log.Infof("Crawl FTP %s", assembly.Url)
 	c.OnHTML("pre", func(e *colly.HTMLElement) {
 		e.ForEachWithBreak("a", func(index int, f *colly.HTMLElement) bool {
 			if strings.Contains(f.Text, "genomic.gbff.gz") {
@@ -254,10 +278,12 @@ func crawlFTPAndDownload(c *colly.Collector, assembly *model.Link) error {
 }
 
 func saveGBFF(c *colly.Collector, name, url string) {
+	filename := fmt.Sprintf("%v.%s", name, "gbff")
+
 	c.SetRequestTimeout(600 * time.Second)
 	c.OnResponse(func(r *colly.Response) {
-		if err := r.Save(fmt.Sprintf("%v.%s", name, "gbff")); err != nil {
-			log.Println("Save error:", err)
+		if err := r.Save(filename); err != nil {
+			log.Error("Save error:", err)
 		}
 	})
 
@@ -266,7 +292,7 @@ func saveGBFF(c *colly.Collector, name, url string) {
 		log.Fatal(err)
 	}
 	elapsed := time.Since(start)
-	log.Printf("Save file took %s", elapsed)
+	log.Infof("Save file %s took %s", filename, elapsed)
 }
 
 func prettyPrintJSON(data *model.Data) {
