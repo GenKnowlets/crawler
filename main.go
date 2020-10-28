@@ -2,6 +2,7 @@ package main
 
 import (
 	"biocrawler/model"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -93,13 +94,12 @@ func crawlMain(url string, output bool) {
 		}
 	}
 
+	prettyJson := indentJson(data)
 	if output {
-		prettyPrintJSON(data)
+		fmt.Println(string(prettyJson))
 	}
 
-	file, _ := json.MarshalIndent(data, "", "  ")
-
-	if err := ioutil.WriteFile("data.json", file, 0644); err != nil {
+	if err := ioutil.WriteFile("data.json", prettyJson, 0644); err != nil {
 		log.Error(err)
 	}
 }
@@ -299,10 +299,13 @@ func saveGBFF(c *colly.Collector, name, url string) {
 	log.Infof("Save file %s took %s", filename, elapsed)
 }
 
-func prettyPrintJSON(data *model.Data) {
-	b, err := json.MarshalIndent(data, "", " ")
-	if err == nil {
-		s := string(b)
-		fmt.Println(s)
+func indentJson(data *model.Data) []byte {
+	bf := bytes.NewBuffer([]byte{})
+	jsonEncoder := json.NewEncoder(bf)
+	jsonEncoder.SetEscapeHTML(false)
+	jsonEncoder.SetIndent("", "  ")
+	if err := jsonEncoder.Encode(data); err != nil {
+		log.Error("Json encoder error:", err)
 	}
+	return bf.Bytes()
 }
