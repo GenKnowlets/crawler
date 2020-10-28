@@ -8,23 +8,24 @@ type Data struct {
 }
 
 type Assembly struct {
-	Url   string `json:"url"`
+	Url   string  `json:"url"`
 	Links []*Link `json:"links"`
 }
 
 type Link struct {
-	Url    string `json:"url"`
+	Url    string  `json:"url"`
 	Report *Report `json:"report"`
 }
 
 type Report struct {
-	OrganismName      string    `json:"organismName"`
-	InfraspecificName string    `json:"infraspecificName"`
+	OrganismName      string     `json:"organismName"`
+	TaxonomyUrl       string     `json:"taxonomyUrl"`
+	InfraspecificName string     `json:"infraspecificName"`
 	BioSample         *BioSample `json:"bioSample"`
-	Submitter         string    `json:"submitter"`
-	Date              string    `json:"date"`
-	FTPUrl            string    `json:"ftpUrl"`
-	GBFFUrl           string    `json:"gbffUrl"`
+	Submitter         string     `json:"submitter"`
+	Date              string     `json:"date"`
+	FTPUrl            string     `json:"ftpUrl"`
+	GBFFUrl           string     `json:"gbffUrl"`
 }
 
 type BioSample struct {
@@ -42,7 +43,3 @@ type BioSample struct {
 	Ploidy                         string `json:"ploidy"`
 	Propagation                    string `json:"propagation"`
 }
-
-
-
-

@@ -176,6 +176,8 @@ func crawlAssembly(c *colly.Collector, url string, assembly *model.Link) error {
 			switch infos[index] {
 			case "Organism name: ":
 				assembly.Report.OrganismName = f.Text
+				url, _ := f.DOM.Find("a").Attr("href")
+				assembly.Report.TaxonomyUrl = e.Request.AbsoluteURL(url)
 			case "Infraspecific name: ":
 				assembly.Report.InfraspecificName = f.Text
 			case "BioSample: ":
