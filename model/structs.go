@@ -1,45 +1,46 @@
 package model
 
 type Data struct {
-	Abstract string   `json:"abstract"`
-	Keywords []string `json:"keywords"`
-	DOI      string   `json:"doi"`
-	Assembly Assembly `json:"assembly"`
+	Abstract string   `json:"abstract,omitempty"`
+	Keywords []string `json:"keywords,omitempty"`
+	DOI      string   `json:"doi,omitempty"`
+	Assembly Assembly `json:"assembly,omitempty"`
 }
 
 type Assembly struct {
-	Url   string  `json:"url"`
-	Links []*Link `json:"links"`
+	Url   string  `json:"url,omitempty"`
+	Links []Link `json:"links,omitempty"`
 }
 
 type Link struct {
-	Url    string  `json:"url"`
-	Report *Report `json:"report"`
+	Url    string  `json:"url,omitempty"`
+	Report Report `json:"report,omitempty"`
 }
 
 type Report struct {
-	OrganismName      string     `json:"organismName"`
-	TaxonomyUrl       string     `json:"taxonomyUrl"`
-	InfraspecificName string     `json:"infraspecificName"`
-	BioSample         *BioSample `json:"bioSample"`
-	Submitter         string     `json:"submitter"`
-	Date              string     `json:"date"`
-	FTPUrl            string     `json:"ftpUrl"`
-	GBFFUrl           string     `json:"gbffUrl"`
+	OrganismName      string     `json:"organismName,omitempty"`
+	TaxonomyUrl       string     `json:"taxonomyUrl,omitempty"`
+	InfraspecificName string     `json:"infraspecificName,omitempty"`
+	BioSample         BioSample `json:"bioSample,omitempty"`
+	Submitter         string     `json:"submitter,omitempty"`
+	Date              string     `json:"date,omitempty"`
+	FTPUrl            string     `json:"ftpUrl,omitempty"`
+	GBFFUrl           string     `json:"gbffUrl,omitempty"`
+	GBFFPath          string     `json:"gbffPath,omitempty"`
 }
 
 type BioSample struct {
-	Url                            string `json:"url"`
-	Strain                         string `json:"strain"`
-	CollectionDate                 string `json:"collectionDate"`
-	BroadScaleEnvironmentalContext string `json:"broadScaleEnvironmentalContext"`
-	LocalScaleEnvironmentalContext string `json:"localScaleEnvironmentalContext"`
-	EnvironmentalMedium            string `json:"environmentalMedium"`
-	GeographicLocation             string `json:"geographicLocation"`
-	LatLong                        string `json:"latLong"`
-	Host                           string `json:"host"`
-	IsolationAndGrowthCondition    string `json:"isolationAndGrowthCondition"`
-	NumberOfReplicons              string `json:"numberOfReplicons"`
-	Ploidy                         string `json:"ploidy"`
-	Propagation                    string `json:"propagation"`
+	Url                            string `json:"url,omitempty"`
+	Strain                         string `json:"strain,omitempty"`
+	CollectionDate                 string `json:"collectionDate,omitempty"`
+	BroadScaleEnvironmentalContext string `json:"broadScaleEnvironmentalContext,omitempty"`
+	LocalScaleEnvironmentalContext string `json:"localScaleEnvironmentalContext,omitempty"`
+	EnvironmentalMedium            string `json:"environmentalMedium,omitempty"`
+	GeographicLocation             string `json:"geographicLocation,omitempty"`
+	LatLong                        string `json:"latLong,omitempty"`
+	Host                           string `json:"host,omitempty"`
+	IsolationAndGrowthCondition    string `json:"isolationAndGrowthCondition,omitempty"`
+	NumberOfReplicons              string `json:"numberOfReplicons,omitempty"`
+	Ploidy                         string `json:"ploidy,omitempty"`
+	Propagation                    string `json:"propagation,omitempty"`
 }
