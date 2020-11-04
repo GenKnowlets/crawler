@@ -201,7 +201,7 @@ func crawlMain(url string, output, downloadGBFF, lookForRelated bool, fromPubmed
 		log.Error(err)
 	}
 
-	cmd := exec.Command("python", "src/main.py")
+	cmd := exec.Command("python3", "src/main.py")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
